@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+
+import sys
+import ast
+import getopt
+from ostckutil import swiftbulkdel
+
+'''
+Print usage
+'''
+def usage():
+    sys.stderr.write("%s [-a|authfile=] <auth-path> [-c|--container] [-h|--help]\n" % sys.argv[0])
+    sys.stderr.write("Removes one or more objects from an openstack container. Objects to be removed are to be passed in from stdin with each object name on one line.\n")
+    sys.stderr.write("Typical use could be in conjunction with the swift cli, the example below shows how one might delete a subset of objects from the container using a regular expression.\n")
+    sys.stderr.write('swift list myfavcontainer | grep ".*\/foo\/*.bar.*mp3" | python %s -c myfavcontainer -a auth.txt\n' % sys.argv[0])
+    sys.stderr.write("Options:\n")
+    sys.stderr.write("  auth-path: Required: swift authentication parameters. Path to a file with a dict entry of form {'authurl':'<url>', 'user':'<user>', 'key':'<passwd>', 'tenant_name':'<tenant>', 'auth_version':'2.0', 'os_options':{'region_name':'<region>'}}\n")
+    sys.stderr.write("  container: Required: the name of the container the objects to be deleted are in\n")
+    sys.stderr.write("\n")
+    sys.exit(1)
+
+'''
+Process command line arguments.
+Invoke dodelete() to open a swift connection and for each line that is passed in through stdin, invoke a DELETE on the object.
+'''
+def main(argv):
+    try:
+        opts, args = getopt.getopt(argv, "ha:c:", ["help", "authfile=", "container="])
+    except getopt.GetoptError:
+        usage()
+
+    authfile = None
+    cname = None
+
+    for opt, arg in opts:
+        if opt in ("-a", "--authfile"):
+            authfile = arg
+
+        if opt in ("-c", "--container"):
+            cname = arg
+
+        elif opt in ("-h", "--help"):
+            usage()
+            
+    if authfile is None or cname is None:
+        usage()
+
+    #Load the authentication parameters file
+    try:
+        with open(authfile, 'r') as f:
+            os_auth = ast.literal_eval(f.read())
+    except IOError:
+        sys.stderr.write("Invalid file path %s passed in for -a|--authfile=\n" % arg)
+        sys.exit(1)
+
+    try:
+        swiftbulkdel.dodelete(os_auth, cname, sys.stdin)
+    except:
+        sys.exit(1) #dodelete would have printed the error on stderr
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

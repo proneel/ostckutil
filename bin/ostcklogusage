@@ -1,0 +1,94 @@
+#!/usr/bin/env python
+
+import sys
+from datetime import datetime, date, time
+import re
+import ast
+from novaclient import client as novaclient
+from cinderclient import client as cinderclient
+from swiftclient import client as swiftclient
+
+'''
+Generates CSV files containing information about servers, block volumes and object stores
+This can be used to keep track of resource usage of compute, block storage and object storage (swift)
+The CSV files are generated in a directory, whose path is to be specified as an argument. The files are stored in YYYYMMDDHH_...csv, so files generated in the same hour will be overwritten.
+The authentication parameters are to be provided in a file with just a one-line dict definition that looks like below
+{'username':'<Fill>', 'auth_url':'<Fill>', 'api_key':'<Fill>', 'region_name':'<Fill>', 'project_id':'<Fill>'}
+'''
+#parse the command line arguments
+if len(sys.argv) != 3:
+    print "Usage: %s out-file-dir auth-file" % sys.argv[0]
+    sys.exit()
+
+#save command line args into variables
+outdir = sys.argv[1]
+authfile = sys.argv[2]
+
+#All openstack authentication info, such as api key and tenant id and region etc are in an auth.txt file, use it to load auth params
+with open(authfile, 'r') as f:
+    os_auth = ast.literal_eval(f.read())
+
+#get an instance of the nova client and within one session get list of all servers
+with novaclient.Client('2.0', **os_auth) as nova:
+    #keep a dict of flavors to vcpus
+    flav_to_cpu = {} #key is flavor name, value is number of vcpus
+    for f in nova.flavors.list():
+        flav_to_cpu[f.name] = f.vcpus
+
+    #open a csv file to write to, the csv file name should be in format YYYYMMDDHH_servers.csv
+    outfile = open(outdir + '/' + datetime.now().strftime("%Y%m%d%H") + '_servers.csv','w')
+
+    #print the header
+    outfile.write('name, backendip, frontendip, id, status, flavor, cpus\n');
+
+    #iterate over all servers and log the basic info about the servers
+    for server in nova.servers.list():
+        flavor = server.flavor['id']
+
+        #find the LAN (internal) and WAN (external) IPs for this server
+        lanip = 'Unknown'
+        wanip = 'Unknown'
+        for key, value in server.addresses.iteritems():
+            if re.search('LAN', key):
+                lanip = value[0]['addr']
+            elif re.search('WAN', key):
+                wanip = value[0]['addr']
+
+        outfile.write(server.name + ',' + lanip + ',' + wanip + ',' + server.id + ',' + server.status + ',' + flavor + ',' + str(flav_to_cpu[flavor]) + '\n');
+        
+    outfile.close();
+
+#get an instance of the cinder client and within one session get list of all block volumes
+#Unfortunately cinderclient doesn't have the __exit__ method like novaclient, so it cannot be encapsulated in a "with block"
+cinder = cinderclient.Client('1', **os_auth)
+
+#open a csv file to write to, the csv file name should be in format YYYYMMDDHH_volumes.csv
+outfile = open(outdir + '/' + datetime.now().strftime("%Y%m%d%H") + '_volumes.csv','w')
+
+#print the header
+outfile.write('name, sizeGB, status, id, bootable\n');
+
+#iterate over all volumes and log the basic info about the volume
+for vol in cinder.volumes.list():
+    outfile.write(vol.display_name + ',' + str(vol.size) + ',' +  vol.status + ',' + vol.id + ',' + vol.bootable + '\n')
+
+outfile.close();
+
+#Unfortunately swift takes different set of parameters (different names!) for authentication compared to cinder and nova, so the same fields need to be copied into another dict
+swiftauth = {'authurl':os_auth['auth_url'], 'user':os_auth['username'], 'key':os_auth['api_key'], 'tenant_name':os_auth['project_id'], 'auth_version':'2.0', 'os_options':{'region_name':os_auth['region_name']}}
+
+#Unfortunately swiftclient also doesn't have the __exit__ method like novaclient, so it cannot be encapsulated in a "with block"
+swift = swiftclient.Connection(**swiftauth)
+
+#open a csv file to write to, the csv file name should be in format YYYYMMDDHH_swift.csv
+outfile = open(outdir + '/' + datetime.now().strftime("%Y%m%d%H") + '_swift.csv','w')
+
+#print the header
+outfile.write('containername, sizebytes, objectcount\n');
+
+#Retrieve the list of containers from the top level and write details of each one to the file
+headers, containers = swift.get_account()
+for container in containers:
+    outfile.write(container['name'] + ',' + str(container['bytes']) + ',' + str(container['count']) + '\n')
+
+outfile.close();

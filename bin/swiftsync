@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import mimetypes
+import ast
+import getopt
+from ostckutil import swiftsync
+
+'''
+Print usage info.
+'''
+def usage():
+    sys.stderr.write("%s [-a|authfile=] <auth-path> [-r|--rootdir=] <root-path> [-t|--threads] <num-threads> [-d|--daemon] <interval-time-secs> [-m|--mimepath=] <mime-path> [-c|--ignore-unknown-content-type] [-h|--help] command\n" % sys.argv[0])
+    sys.stderr.write("Synchronizes a local/NFS directory tree to one or more containers in Swift storage. Files added to the local directory will automatically be uploaded into the corresponding Swift container.\n")
+    sys.stderr.write("Command line arguments:\n")
+    sys.stderr.write("    auth-path: Required: swift authentication parameters. Path to a file with a dict entry of form {'authurl':'<url>', 'user':'<user>', 'key':'<passwd>', 'tenant_name':'<tenant>', 'auth_version':'2.0', 'os_options':{'region_name':'<region>'}}\n")
+    sys.stderr.write("    root-path: Required: the root directory where the rsync should recursively start from\n")
+    sys.stderr.write("    threads: Optional: multiple threads for parallel uploads. Otherwise, will run single-threaded.\n")
+    sys.stderr.write("    daemon: Optional: with this option the script will not terminate after one run, but will run like a daemon. An interval time can be specified between runs so the process re-runs no earlier than specified seconds after a previous run. It is not a sleep interval between runs. If the interval has already passed (perhaps the previous run had lots of files to upload), the next run will start immediately.\n")
+    sys.stderr.write("    mime-path: Optional: a file where custom mime types (not auto-configured in the OS) can be added. This is used to set the appropriate content-type when PUTting an object into swift\n")
+    sys.stderr.write("    ignore-unknown-content-type: Optional: the content-type to use when uploading an object is normally guessed from the file extension. Files where such cannot be guessed are not uploaded unless this parameter is passed in as an override.\n")
+    sys.stderr.write("    command: Required: one of upload|audit\n")
+    sys.stderr.write("    upload instructs swiftsync to upload files from each sub directory of the root directory into corresponding paths in Swift\n")
+    sys.stderr.write("    audit instructs swiftsync to compare each file in the directory to corresponding objects in Swift and generate an audit log of differences\n")
+    sys.stderr.write("\n")
+    sys.exit(1)
+
+'''
+Process command line arguments and invoke the worker threads.
+'''
+def main(argv):
+    authfile = None
+    rootdir = None
+    ignore_unk_ct = False
+    daemon_interval = -1
+    num_threads = 1
+
+    try:
+        opts, args = getopt.getopt(argv, "ha:r:m:cd:t:", ["help", "authfile=", "rootdir=", "mimepath=", "ignore-unknown-content-type", "daemon=", "threads="])
+
+        for opt, arg in opts:
+            if opt in ("-a", "--authfile"):
+                authfile = arg
+
+            elif opt in ("-r", "--rootdir"):
+                rootdir = arg
+
+            elif opt in ("-d", "--daemon"):
+                daemon_interval = int(arg)
+
+            elif opt in ("-t", "--threads"):
+                num_threads = int(arg)
+
+            elif opt in ("-m", "--mimepath"):
+                if os.path.isfile(arg):
+                    mimetypes.init(files=[arg])
+                else:
+                    sys.stderr.write("Invalid file path %s passed in for -m|--mimepath=\n" % arg)
+                    sys.exit(1)
+
+            elif opt in ("-c", "--ignore-unknown-content-type"):
+                ignore_unk_ct = True
+            
+            elif opt in ("-h", "--help"):
+                usage()
+    except:
+        usage()
+            
+    if len(args) != 1 or authfile is None or rootdir is None:
+        usage()
+
+    command = args[0]
+
+    if command == "audit":
+        daemon_interval = -1 #Audit does not need to run as a daemon, process once and that is enough
+        num_threads = 1 #Although audit could be multi-threaded, we don't need to
+        cmd_cb = swiftsync.audit_cb #Set the right callback for processing
+    elif command == "upload":
+        cmd_cb = swiftsync.upload_cb #Set the right callback for processing
+    else:
+        usage()
+
+    rootdir = rootdir.rstrip(r'/') #Remove trailing / if any passed in command line arg. TODO: Need to fix for Windows!
+        
+    #Load the authentication parameters file
+    try:
+        with open(authfile, 'r') as f:
+            os_auth = ast.literal_eval(f.read())
+    except IOError:
+        sys.stderr.write("Invalid file path %s passed in for -a|--authfile=\n" % arg)
+        sys.exit(1)
+
+    #Start the work!
+    try:
+        swiftsync.start_workers(num_threads, os_auth, rootdir, ignore_unk_ct, daemon_interval, cmd_cb)
+    except:
+        sys.exit(2) #In most cases start_workers would have printed out an error on stderr
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
