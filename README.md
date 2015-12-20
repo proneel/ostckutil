@@ -35,6 +35,7 @@ Other notes:
 
 Planned Enhancements:
 * Allow for file removal by dropping a 'marker' file with a .remove extension in the directory.
+
 ## swiftbulkdel ##
 swiftbulkdel removes files from a swift container. Typical usage might use a combination of the swift CLI and swiftbulkdel as shown below. Such selective deletion is not available with the swift CLI.
 ```
