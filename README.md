@@ -18,7 +18,9 @@ music
 ------topofrock1.mp3
 and so on
 ```
-You could create this structure on a local/NFS directory and swiftsync will upload files to a corresponding pseudofolder (URL) in the swift container. You could run it in daemon mode (like rsync) and as files are added/modified, swiftsync will PUT to swift. To protect against accidental purge of objects from swift, swiftsync does not delete from the container, even if you delete from local disk. swiftsync can be run to audit your local versus container to determine discrepancies between the two; the format of the audit is as shown below (with annotations):
+You could create this structure on a local/NFS directory and swiftsync will upload files to a corresponding pseudofolder (URL) in the swift container. You could run it in daemon mode (like rsync) and as files are added/modified, swiftsync will PUT to swift. To protect against accidental purge of objects from swift, swiftsync does not delete from the container, even if you delete from local disk.
+
+swiftsync can be run to audit your local versus container to identify discrepancies between the two; the format of the audit is as shown below (with annotations):
 ```
 + pop/abracadabra.mp3 2a40967f0338272300dc614b05a197d6  ... => indicating this file is in local and not in swift
 - rock/topofrock/nolongerahit.mp3 1243ce88295c6e92a8d082fad5c16c3b ...=> indicating this file is in swift and not in local
