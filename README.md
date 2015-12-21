@@ -1,4 +1,6 @@
 # ostckutil
+License: MIT (https://opensource.org/licenses/MIT)
+
 There are 3 Open Stack utilities in this project.
 
  1. rsync for Open Stack. A local/NFS directory tree can be automatically cloned to a corresponding pseudo-folder hierarchy in a Swift container. I could find one other project that does this    (http://rclone.org/) which seems to be very comprehensive, but I needed something simpler and custom to my use case.
