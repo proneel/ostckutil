@@ -34,6 +34,7 @@ Other notes:
 * Supports multi-threading for parallel uploads. Renaming directories when running upload may cause problems since the threads divide up the directories amongst them based on a hash of the directory path.
 * Daemon-mode
 * Uses file modification time to decide if the file should be uploaded to swift. Will not kick-in if time on the server is reset to a time past.
+* Works well if the objects are organized into pseudo-folders with not more than a few 1000s of objects in a folder. Since multi-threading divvies up directories to each thread, performance will be suboptimal in a flat hierarchy.
 
 Planned Enhancements:
 * Allow for file removal by dropping a 'marker' file with a .remove extension in the directory.
